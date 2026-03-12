@@ -16,7 +16,7 @@ A full-stack web app for saving and browsing Taobao cosplay listings. Users past
 | State | Jotai |
 | Data Fetching | TanStack React Query + Eden Treaty (type-safe API client) |
 | Routing | TanStack Router (file-based) |
-| Database | MySQL via `bun:sql` |
+| Database | MySQL via `bun:sql` (backend server) / `mysql2` (scripts) |
 | Linter/Formatter | Biome |
 | Virtualization | TanStack React Virtual |
 | Image processing | sharp |
@@ -35,7 +35,6 @@ src/
   frontend/
     App.tsx            # React root; wraps with MantineProvider, QueryClientProvider, RouterProvider
     api.ts             # Eden Treaty client — typed against backend App export
-    atoms.ts           # Jotai atoms (activeSection persisted to localStorage)
     queries.ts         # React Query hooks (useItemsQuery, useCreateItemMutation, useUpdateItemMutation)
     components/
       VirtualCardGrid.tsx   # Responsive virtual grid (1–5 cols by viewport width)
@@ -49,6 +48,7 @@ public/
   thumbs/               # Downloaded thumbnail images (served as static files)
 scripts/
   downloadThumbs.ts     # Downloads alicdn images, resizes to 400px wide JPEG via sharp, saves to public/thumbs/
+  translateTitles.ts    # Translates original_title (ZH→EN) via DeepL free API, saves to translated_title
 ```
 
 ## Database Schema
@@ -61,6 +61,7 @@ Single table: **`items`**
 | `image_url` | VARCHAR(2083) NULL | Multiple URLs separated by `\|\|` |
 | `original_title` | VARCHAR(2083) NOT NULL | Raw title from Taobao JSON |
 | `custom_title` | VARCHAR(2083) NULL | User-edited display title |
+| `translated_title` | VARCHAR(2083) NULL | Auto-translated English title (via DeepL) |
 | `seller_name` | VARCHAR(255) NULL | |
 | `listing_url` | VARCHAR(2083) NOT NULL | Taobao product URL |
 | `notes` | TEXT NULL | Free-form user notes |
@@ -70,7 +71,7 @@ Single table: **`items`**
 | `created_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP | |
 | `updated_at` | TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP | |
 
-Schema is created automatically on startup via `initDb()` in [src/backend/db.ts](src/backend/db.ts).
+Schema is created automatically on startup via `initDb()` in [src/backend/db.ts](src/backend/db.ts). The `translated_title` column is added via a conditional `ALTER TABLE` that first checks `information_schema` — skipped entirely if the column already exists, to avoid MySQL metadata lock contention.
 
 ## Environment Variables
 
@@ -82,17 +83,20 @@ DB_PORT=3306
 DB_USER=root
 DB_PASS=
 DB_DATABASE=cosplay_taobao
+DEEPL_KEY=your_deepl_free_api_key
+DEEPL_GLOSSARY_ID=optional_glossary_id
 ```
 
 ## Commands
 
 ```bash
-bun run dev             # Generate routes + start server with HMR
-bun run build           # Generate routes + compile to single Linux binary
-bun run lint            # Biome check + auto-fix
-bun run generate-routes # One-shot TanStack Router route generation
-bun run watch-routes    # Watch mode route generation
-bun run download-thumbs # Download + cache alicdn images to public/thumbs/
+bun run dev              # Generate routes + start server with HMR
+bun run build            # Generate routes + compile to single Linux binary
+bun run lint             # Biome check + auto-fix
+bun run generate-routes  # One-shot TanStack Router route generation
+bun run watch-routes     # Watch mode route generation
+bun run download-thumbs  # Download + cache alicdn images to public/thumbs/
+bun run translate-titles # Translate untranslated item titles via DeepL (ZH→EN)
 ```
 
 ## API
@@ -118,15 +122,27 @@ bun run download-thumbs # Download + cache alicdn images to public/thumbs/
 - **Archiving**: Items use soft-delete (`is_archived` + `archived_at`); no hard deletes via the UI (DELETE endpoint exists for scripting)
 - **Duplicate detection**: Backend strips URL after first `&` and checks `listing_url LIKE %baseUrl%`; frontend shows a confirmation modal on 409
 - **Static file serving**: `decodeURIComponent` is applied to the pathname before `Bun.file()` so filenames with spaces (stored as `%20` in URLs) resolve correctly
+- **Scripts use `mysql2`**: Bun's built-in `bun:sql` module has a connection pool bug in standalone scripts that causes UPDATE queries to hang after ~2 executions. All `scripts/*.ts` files use `mysql2/promise` with a single `createConnection()` instead. The backend server continues to use `bun:sql` normally.
+
+## Translation Script (`scripts/translateTitles.ts`)
+
+- Reads items with `translated_title IS NULL`, newest first
+- Calls DeepL free API (`source_lang: ZH`, `target_lang: EN`)
+- Saves each translation immediately after the API call (progress is preserved if the script is interrupted)
+- Default per-run character cap: 50,000 (override with `TRANSLATE_MAX_CHARS=n` env var)
+- Optional glossary: set `DEEPL_GLOSSARY_ID` in `.env`
+- Crontab example (nightly at 2am): `0 2 * * * cd /path/to/cosplay-taobao && bun run translate-titles`
 
 ## Frontend — Index Page (`routes/index.tsx`)
 
-- **Sticky toolbar**: JSON paste input + pink "Add Item" button (Enter key supported); Divider; debounced search input (`useDebouncedValue`, 300ms); "Show Archived Only" Chip
+- **Sticky toolbar**: JSON paste input + pink "Add Item" button (Enter key supported); Divider; debounced search input (`useDebouncedValue`, 300ms); "Show Archived Only" Chip; "Display Original Names" Chip
 - **Item grid**: `VirtualCardGrid` with `ItemCard` components
+- **ItemCard title priority**: `custom_title` → `translated_title` → `original_title`. When "Display Original Names" is checked, always shows `original_title`.
 - **ItemCard**: Mantine Carousel for images, archived gray border + badge + date, title, seller, price, button row pinned to bottom of card
   - "View Listing" — opens Taobao URL in new tab
   - "Notes" — only shown when notes exist; opens read-only modal
   - "Edit" — opens form modal to edit `custom_title` and `notes`
+- **Search**: matches `original_title`, `custom_title`, `translated_title`, and `notes`
 - **Modals** (all defined once in `IndexPage`, shared across cards):
   - Duplicate confirmation modal (409 response)
   - Notes view modal (read-only, scrollable)

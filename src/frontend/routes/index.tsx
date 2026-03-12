@@ -45,13 +45,17 @@ function ItemCard({
   onViewNotes,
   onEdit,
   highlighted,
+  showOriginalNames,
 }: {
   item: Item
   onViewNotes: (item: Item) => void
   onEdit: (item: Item) => void
   highlighted?: boolean
+  showOriginalNames?: boolean
 }) {
-  const displayTitle = item.custom_title || item.original_title
+  const displayTitle = showOriginalNames
+    ? item.original_title
+    : (item.custom_title || item.translated_title || item.original_title)
 
   return (
     <Card
@@ -183,6 +187,7 @@ function IndexPage() {
   const [search, setSearch] = useState("")
   const [debouncedSearch] = useDebouncedValue(search, 300)
   const [showArchived, setShowArchived] = useState(false)
+  const [showOriginalNames, setShowOriginalNames] = useState(false)
   const [notesItem, setNotesItem] = useState<Item | null>(null)
   const [editItem, setEditItem] = useState<Item | null>(null)
   const gridRef = useRef<VirtualCardGridHandle>(null)
@@ -227,6 +232,7 @@ function IndexPage() {
         (item) =>
           item.original_title.toLowerCase().includes(q) ||
           (item.custom_title?.toLowerCase().includes(q) ?? false) ||
+          (item.translated_title?.toLowerCase().includes(q) ?? false) ||
           (item.notes?.toLowerCase().includes(q) ?? false),
       )
     }
@@ -420,6 +426,9 @@ function IndexPage() {
           <Chip size="xs" checked={showArchived} onChange={setShowArchived}>
             {showArchived ? "Show Archived Only" : "Show Archived Only"}
           </Chip>
+          <Chip size="xs" checked={showOriginalNames} onChange={setShowOriginalNames}>
+            Display Original Names
+          </Chip>
           <Text size="sm">{items.length} items collected</Text>
         </Group>
       </Box>
@@ -436,6 +445,7 @@ function IndexPage() {
             onViewNotes={setNotesItem}
             onEdit={openEdit}
             highlighted={item.id === highlightedItemId}
+            showOriginalNames={showOriginalNames}
           />
         )}
       />

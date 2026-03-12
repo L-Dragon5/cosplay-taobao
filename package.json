@@ -11,7 +11,8 @@
     "start": "NODE_ENV=production bun dist/index.ts",
     "test": "bun test",
     "lint": "bunx --bun @biomejs/biome check --write",
-    "download-thumbs": "bun run scripts/downloadThumbs.ts"
+    "download-thumbs": "bun run scripts/downloadThumbs.ts",
+    "translate-titles": "bun run scripts/translateTitles.ts"
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",
@@ -34,6 +35,7 @@
     "embla-carousel": "^8.5.2",
     "embla-carousel-react": "^8.5.2",
     "jotai": "^2.18.0",
+    "mysql2": "^3.19.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "sharp": "^0.33.5"

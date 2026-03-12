@@ -1,18 +1,30 @@
 import { randomUUID } from "node:crypto"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
+import mysql from "mysql2/promise"
 import sharp from "sharp"
-import { db } from "@/backend/db"
+
+const { DB_HOST, DB_PORT, DB_USER, DB_PASS, DB_DATABASE } = process.env
+
+const conn = await mysql.createConnection({
+  host: DB_HOST,
+  port: Number(DB_PORT ?? 3306),
+  user: DB_USER,
+  password: DB_PASS,
+  database: DB_DATABASE,
+})
 
 const thumbsDir = join(process.cwd(), "public", "thumbs")
 mkdirSync(thumbsDir, { recursive: true })
 
-const items = await db<{ id: number; image_url: string }[]>`
-  SELECT id, image_url FROM items WHERE image_url LIKE '%alicdn%'
-`
+const [rows] = await conn.query<mysql.RowDataPacket[]>(
+  "SELECT id, image_url FROM items WHERE image_url LIKE '%alicdn%' ORDER BY created_at DESC",
+)
+const items = rows as { id: number; image_url: string }[]
 
 if (items.length === 0) {
   console.log("No items found to process")
+  await conn.end()
   process.exit(0)
 }
 
@@ -58,9 +70,15 @@ for (const item of items) {
   }
 
   if (savedUrls.length > 0) {
-    await db`UPDATE items SET image_url = ${savedUrls.join("||")} WHERE id = ${item.id}`
+    await conn.execute("UPDATE items SET image_url = ? WHERE id = ?", [
+      savedUrls.join("||"),
+      item.id,
+    ])
+    console.log(`  Saved ${savedUrls.length} image(s) for id=${item.id}`)
   }
 }
+
+await conn.end()
 
 console.log("Done!")
 process.exit(0)

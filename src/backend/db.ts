@@ -12,6 +12,7 @@ export async function initDb() {
 		image_url VARCHAR(2083) NULL,
 		original_title VARCHAR(2083) NOT NULL,
 		custom_title VARCHAR(2083) NULL,
+		translated_title VARCHAR(2083) NULL,
 		seller_name VARCHAR(255) NULL,
 		listing_url VARCHAR(2083) NOT NULL,
 		notes TEXT NULL,
@@ -21,4 +22,15 @@ export async function initDb() {
 		created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 	)`
+  // Only run ALTER TABLE if the column doesn't already exist — even a no-op
+  // ALTER TABLE acquires an exclusive metadata lock and blocks all concurrent DML.
+  const [col] = await db<{ count: number }[]>`
+    SELECT COUNT(*) as count FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'items'
+      AND COLUMN_NAME = 'translated_title'
+  `
+  if ((col?.count ?? 0) === 0) {
+    await db`ALTER TABLE items ADD COLUMN translated_title VARCHAR(2083) NULL AFTER custom_title`
+  }
 }

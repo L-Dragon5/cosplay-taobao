@@ -3,6 +3,7 @@ export interface Item {
   image_url: string | null
   original_title: string
   custom_title: string | null
+  translated_title: string | null
   seller_name: string | null
   listing_url: string
   notes: string | null
