@@ -9,6 +9,7 @@ import {
   Group,
   Image,
   Modal,
+  Popover,
   ScrollArea,
   Stack,
   Text,
@@ -39,6 +40,63 @@ import {
 export const Route = createFileRoute("/")({
   component: IndexPage,
 })
+
+function TitleWithPopover({ title }: { title: string }) {
+  const [opened, setOpened] = useState(false)
+  const textRef = useRef<HTMLDivElement>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function cancelClose() {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current)
+      closeTimer.current = null
+    }
+  }
+
+  function scheduleClose() {
+    closeTimer.current = setTimeout(() => setOpened(false), 100)
+  }
+
+  function handleMouseEnter() {
+    cancelClose()
+    const el = textRef.current
+    if (el && el.scrollHeight > el.clientHeight) {
+      setOpened(true)
+    }
+  }
+
+  return (
+    <Popover
+      opened={opened}
+      onClose={() => setOpened(false)}
+      width={260}
+      position="bottom"
+      withArrow
+      shadow="md"
+    >
+      <Popover.Target>
+        <Text
+          ref={textRef}
+          fw={500}
+          size="md"
+          lineClamp={2}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={scheduleClose}
+          style={{ cursor: "default" }}
+        >
+          {title}
+        </Text>
+      </Popover.Target>
+      <Popover.Dropdown
+        onMouseEnter={cancelClose}
+        onMouseLeave={scheduleClose}
+        style={{ userSelect: "text", cursor: "text" }}
+      >
+        <Text size="sm">{title}</Text>
+      </Popover.Dropdown>
+    </Popover>
+  )
+}
 
 function ItemCard({
   item,
@@ -122,9 +180,7 @@ function ItemCard({
           </Group>
         )}
 
-        <Text fw={500} size="md" lineClamp={2} title={displayTitle}>
-          {displayTitle}
-        </Text>
+        <TitleWithPopover title={displayTitle} />
 
         {item.seller_name && (
           <Text size="xs" c="dimmed" lineClamp={1}>
