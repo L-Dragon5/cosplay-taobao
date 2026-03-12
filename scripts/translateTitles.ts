@@ -5,11 +5,11 @@ process.on("unhandledRejection", (err) => {
   process.exit(1)
 })
 
-const { DB_HOST, DB_PORT, DB_USER, DB_PASS, DB_DATABASE, DEEPL_KEY } =
+const { DB_HOST, DB_PORT, DB_USER, DB_PASS, DB_DATABASE, GEMINI_KEY } =
   process.env
 
-if (!DEEPL_KEY) {
-  console.error("DEEPL_KEY is not set in environment")
+if (!GEMINI_KEY) {
+  console.error("GEMINI_KEY is not set in environment")
   process.exit(1)
 }
 
@@ -21,13 +21,10 @@ const conn = await mysql.createConnection({
   database: DB_DATABASE,
 })
 
-const DEEPL_API_URL = "https://api-free.deepl.com/v2/translate"
-
-// Default: translate at most 50,000 chars per run to stay well under 500k/month
-const MAX_CHARS = Number(process.env.TRANSLATE_MAX_CHARS ?? 50_000)
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_KEY}`
 
 const [rows] = await conn.query<mysql.RowDataPacket[]>(
-  "SELECT id, original_title FROM items WHERE translated_title IS NULL ORDER BY created_at DESC",
+  "SELECT id, original_title FROM items WHERE translated_title IS NULL ORDER BY created_at DESC LIMIT 1000",
 )
 const items = rows as { id: number; original_title: string }[]
 
@@ -37,50 +34,41 @@ if (items.length === 0) {
   process.exit(0)
 }
 
-console.log(
-  `Found ${items.length} untranslated item(s). Max chars this run: ${MAX_CHARS}`,
-)
+console.log(`Found ${items.length} untranslated item(s).`)
 
-let charsUsed = 0
 let translated = 0
-let skipped = 0
 
 for (const item of items) {
-  const titleLen = item.original_title.length
-  if (charsUsed + titleLen > MAX_CHARS) {
-    skipped++
-    continue
-  }
-
   try {
-    const res = await fetch(DEEPL_API_URL, {
+    const res = await fetch(GEMINI_API_URL, {
       method: "POST",
-      headers: {
-        Authorization: `DeepL-Auth-Key ${DEEPL_KEY}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        text: [item.original_title],
-        target_lang: "EN",
-        source_lang: "ZH",
-        ...(process.env.DEEPL_GLOSSARY_ID
-          ? { glossary_id: process.env.DEEPL_GLOSSARY_ID }
-          : {}),
+        contents: [
+          {
+            parts: [
+              {
+                text: `Translate this Chinese product title to English. Return only the translated text, nothing else:\n${item.original_title}`,
+              },
+            ],
+          },
+        ],
       }),
     })
 
     if (!res.ok) {
       const body = await res.text()
       console.error(
-        `  DeepL error for id=${item.id}: HTTP ${res.status} — ${body}`,
+        `  Gemini error for id=${item.id}: HTTP ${res.status} — ${body}`,
       )
       continue
     }
 
     const json = (await res.json()) as {
-      translations: { text: string; detected_source_language: string }[]
+      candidates: { content: { parts: { text: string }[] } }[]
     }
-    const translatedText = json.translations[0]?.text
+    const translatedText =
+      json.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
     if (!translatedText) {
       console.error(`  No translation returned for id=${item.id}`)
       continue
@@ -90,7 +78,6 @@ for (const item of items) {
       translatedText,
       item.id,
     ])
-    charsUsed += titleLen
     translated++
     console.log(`  [${item.id}] "${item.original_title}" → "${translatedText}"`)
   } catch (err) {
@@ -100,7 +87,5 @@ for (const item of items) {
 
 await conn.end()
 
-console.log(
-  `\nDone. Translated: ${translated}, skipped (char limit): ${skipped}, chars used: ${charsUsed}`,
-)
+console.log(`\nDone. Translated: ${translated}`)
 process.exit(0)

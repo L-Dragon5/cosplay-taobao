@@ -48,7 +48,7 @@ public/
   thumbs/               # Downloaded thumbnail images (served as static files)
 scripts/
   downloadThumbs.ts     # Downloads alicdn images, resizes to 400px wide JPEG via sharp, saves to public/thumbs/
-  translateTitles.ts    # Translates original_title (ZH→EN) via DeepL free API, saves to translated_title
+  translateTitles.ts    # Translates original_title (ZH→EN) via Gemini API, saves to translated_title
 ```
 
 ## Database Schema
@@ -61,7 +61,7 @@ Single table: **`items`**
 | `image_url` | VARCHAR(2083) NULL | Multiple URLs separated by `\|\|` |
 | `original_title` | VARCHAR(2083) NOT NULL | Raw title from Taobao JSON |
 | `custom_title` | VARCHAR(2083) NULL | User-edited display title |
-| `translated_title` | VARCHAR(2083) NULL | Auto-translated English title (via DeepL) |
+| `translated_title` | VARCHAR(2083) NULL | Auto-translated English title (via Gemini) |
 | `seller_name` | VARCHAR(255) NULL | |
 | `listing_url` | VARCHAR(2083) NOT NULL | Taobao product URL |
 | `notes` | TEXT NULL | Free-form user notes |
@@ -83,8 +83,7 @@ DB_PORT=3306
 DB_USER=root
 DB_PASS=
 DB_DATABASE=cosplay_taobao
-DEEPL_KEY=your_deepl_free_api_key
-DEEPL_GLOSSARY_ID=optional_glossary_id
+GEMINI_KEY=your_gemini_api_key
 ```
 
 ## Commands
@@ -96,7 +95,7 @@ bun run lint             # Biome check + auto-fix
 bun run generate-routes  # One-shot TanStack Router route generation
 bun run watch-routes     # Watch mode route generation
 bun run download-thumbs  # Download + cache alicdn images to public/thumbs/
-bun run translate-titles # Translate untranslated item titles via DeepL (ZH→EN)
+bun run translate-titles # Translate untranslated item titles via Gemini (ZH→EN)
 ```
 
 ## API
@@ -127,11 +126,10 @@ bun run translate-titles # Translate untranslated item titles via DeepL (ZH→EN
 ## Translation Script (`scripts/translateTitles.ts`)
 
 - Reads items with `translated_title IS NULL`, newest first
-- Calls DeepL free API (`source_lang: ZH`, `target_lang: EN`)
+- Calls Gemini 3 Flash Preview API with a prompt to translate ZH→EN, returning only the translated text
 - Saves each translation immediately after the API call (progress is preserved if the script is interrupted)
-- Default per-run character cap: 50,000 (override with `TRANSLATE_MAX_CHARS=n` env var)
-- Optional glossary: set `DEEPL_GLOSSARY_ID` in `.env`
-- Crontab example (nightly at 2am): `0 2 * * * cd /path/to/cosplay-taobao && bun run translate-titles`
+- Processes up to 1,000 items per run
+- Crontab example (weekly Sunday at 2am): `0 2 * * 0 cd /path/to/cosplay-taobao && bun run translate-titles`
 
 ## Frontend — Index Page (`routes/index.tsx`)
 
