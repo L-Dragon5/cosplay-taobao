@@ -39,6 +39,17 @@ console.log(`Found ${items.length} untranslated item(s).`)
 let translated = 0
 
 for (const item of items) {
+  if (
+    item.original_title.trim() === "" ||
+    (item.original_title.match(/\?/g) ?? []).length > 3
+  ) {
+    await conn.execute("UPDATE items SET translated_title = ? WHERE id = ?", [
+      "Error",
+      item.id,
+    ])
+    continue
+  }
+
   try {
     const res = await fetch(GEMINI_API_URL, {
       method: "POST",

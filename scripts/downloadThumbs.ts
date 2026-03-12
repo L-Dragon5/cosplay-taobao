@@ -58,7 +58,7 @@ for (const item of items) {
       const filePath = join(thumbsDir, filename)
 
       await sharp(buffer)
-        .resize({ width: 400, withoutEnlargement: true })
+        .resize({ width: 600, withoutEnlargement: true })
         .jpeg({ quality: 100 })
         .toFile(filePath)
 

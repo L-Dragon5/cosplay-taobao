@@ -1,5 +1,7 @@
 import { Carousel } from "@mantine/carousel"
 import {
+  ActionIcon,
+  Affix,
   Badge,
   Box,
   Button,
@@ -15,10 +17,12 @@ import {
   Text,
   Textarea,
   TextInput,
+  Transition,
 } from "@mantine/core"
 import { useForm } from "@mantine/form"
-import { useDebouncedValue } from "@mantine/hooks"
+import { useDebouncedValue, useWindowScroll } from "@mantine/hooks"
 import {
+  IconArrowUp,
   IconEdit,
   IconExternalLink,
   IconNotes,
@@ -113,7 +117,7 @@ function ItemCard({
 }) {
   const displayTitle = showOriginalNames
     ? item.original_title
-    : (item.custom_title || item.translated_title || item.original_title)
+    : item.custom_title || item.translated_title || item.original_title
 
   return (
     <Card
@@ -244,9 +248,19 @@ function IndexPage() {
   const [debouncedSearch] = useDebouncedValue(search, 300)
   const [showArchived, setShowArchived] = useState(false)
   const [showOriginalNames, setShowOriginalNames] = useState(false)
+  const [preserveScroll, setPreserveScroll] = useState(
+    () => localStorage.getItem("preserveScroll") === "true",
+  )
+
+  function togglePreserveScroll(val: boolean) {
+    localStorage.setItem("preserveScroll", String(val))
+    setPreserveScroll(val)
+  }
   const [notesItem, setNotesItem] = useState<Item | null>(null)
   const [editItem, setEditItem] = useState<Item | null>(null)
   const gridRef = useRef<VirtualCardGridHandle>(null)
+
+  const [scroll] = useWindowScroll()
 
   const { data: items = [] } = useItemsQuery()
   const createMutation = useCreateItemMutation()
@@ -440,7 +454,8 @@ function IndexPage() {
           zIndex: 100,
           backgroundColor: "var(--mantine-color-body)",
         }}
-        py="sm"
+        mx="-1rem"
+        p="sm"
       >
         <Group gap="xs" align="flex-start">
           <TextInput
@@ -482,18 +497,44 @@ function IndexPage() {
           <Chip size="xs" checked={showArchived} onChange={setShowArchived}>
             {showArchived ? "Show Archived Only" : "Show Archived Only"}
           </Chip>
-          <Chip size="xs" checked={showOriginalNames} onChange={setShowOriginalNames}>
+          <Chip
+            size="xs"
+            checked={showOriginalNames}
+            onChange={setShowOriginalNames}
+          >
             Display Original Names
+          </Chip>
+          <Chip size="xs" checked={preserveScroll} onChange={togglePreserveScroll}>
+            Remember Scroll
           </Chip>
           <Text size="sm">{items.length} items collected</Text>
         </Group>
       </Box>
+
+      {/* Scroll-to-top FAB */}
+      <Affix position={{ bottom: 24, right: 24 }}>
+        <Transition transition="slide-up" mounted={scroll.y > 300}>
+          {(styles) => (
+            <ActionIcon
+              style={styles}
+              size="xl"
+              radius="xl"
+              color="orange"
+              onClick={() => window.scrollTo({ top: 0, behavior: "instant" })}
+              aria-label="Scroll to top"
+            >
+              <IconArrowUp size={20} />
+            </ActionIcon>
+          )}
+        </Transition>
+      </Affix>
 
       {/* Item grid */}
       <VirtualCardGrid
         controlRef={gridRef}
         items={filteredItems}
         estimateSize={500}
+        preserveScroll={preserveScroll}
         renderItem={(item) => (
           <ItemCard
             key={item.id}

@@ -1,5 +1,13 @@
 import { useWindowVirtualizer } from "@tanstack/react-virtual"
-import { useImperativeHandle, useLayoutEffect, useRef, useState } from "react"
+import {
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react"
+
+const SCROLL_KEY = "vgrid-scroll-y"
 
 function getColumns(width: number): number {
   if (width < 576) return 1
@@ -18,11 +26,13 @@ export function VirtualCardGrid<T extends { id: number }>({
   renderItem,
   estimateSize = 220,
   controlRef,
+  preserveScroll = true,
 }: {
   items: T[]
   renderItem: (item: T) => React.ReactNode
   estimateSize?: number
   controlRef?: React.RefObject<VirtualCardGridHandle | null>
+  preserveScroll?: boolean
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [cols, setCols] = useState(() => getColumns(window.innerWidth))
@@ -41,6 +51,33 @@ export function VirtualCardGrid<T extends { id: number }>({
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+
+  // Restore scroll position once items first arrive (virtualizer total height is 0 until then)
+  const hasRestoredScroll = useRef(false)
+  useEffect(() => {
+    if (!preserveScroll || hasRestoredScroll.current || items.length === 0)
+      return
+    hasRestoredScroll.current = true
+    const saved = sessionStorage.getItem(SCROLL_KEY)
+    if (!saved) return
+    const y = parseInt(saved, 10)
+    if (y <= 0) return
+    // Give the virtualizer one frame to paint its total height before scrolling
+    const id = setTimeout(() => window.scrollTo(0, y), 50)
+    return () => clearTimeout(id)
+  }, [items.length, preserveScroll])
+
+  // Save scroll position continuously (clear saved value when disabled)
+  useEffect(() => {
+    if (!preserveScroll) {
+      sessionStorage.removeItem(SCROLL_KEY)
+      return
+    }
+    const handler = () =>
+      sessionStorage.setItem(SCROLL_KEY, String(window.scrollY))
+    window.addEventListener("scroll", handler, { passive: true })
+    return () => window.removeEventListener("scroll", handler)
+  }, [preserveScroll])
 
   const rows: T[][] = []
   for (let i = 0; i < items.length; i += cols) {
