@@ -18,7 +18,7 @@ export async function retrieveAll(): Promise<Item[]> {
 export async function create(body: {
   json: string
   override?: boolean
-}): Promise<{ error?: string; duplicate?: boolean; item?: Item }> {
+}): Promise<{ error?: string; duplicate?: boolean; duplicateId?: number; item?: Item }> {
   let info: Record<string, unknown>
 
   try {
@@ -37,13 +37,15 @@ export async function create(body: {
   }
 
   if (!body.override) {
-    // Strip query params after the first & to detect near-duplicate URLs
-    const baseUrl = listingUrl.split("&")[0]
-    const dupes = await db<{ id: number }[]>`
-      SELECT id FROM items WHERE listing_url LIKE ${`%${baseUrl}%`} LIMIT 1
-    `
-    if (dupes.length > 0) {
-      return { error: "Item already exists", duplicate: true }
+    const idMatch = listingUrl.match(/[?&]id=([^&]+)/)
+    const itemId = idMatch?.[1]
+    if (itemId) {
+      const dupes = await db<{ id: number }[]>`
+        SELECT id FROM items WHERE listing_url LIKE ${`%id=${itemId}%`} LIMIT 1
+      `
+      if (dupes.length > 0) {
+        return { error: "Item already exists", duplicate: true, duplicateId: dupes[0]?.id }
+      }
     }
   }
 

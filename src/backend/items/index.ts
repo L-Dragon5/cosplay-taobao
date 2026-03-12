@@ -10,7 +10,7 @@ export const itemsController = new Elysia({ prefix: "/items" })
       const result = await service.create(body)
       if (result.error) {
         set.status = result.duplicate ? 409 : 400
-        return { error: result.error }
+        return { error: result.error, duplicateId: result.duplicateId }
       }
       return result.item
     },

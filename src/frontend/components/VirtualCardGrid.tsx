@@ -1,5 +1,5 @@
 import { useWindowVirtualizer } from "@tanstack/react-virtual"
-import { useLayoutEffect, useRef, useState } from "react"
+import { useImperativeHandle, useLayoutEffect, useRef, useState } from "react"
 
 function getColumns(width: number): number {
   if (width < 576) return 1
@@ -9,14 +9,20 @@ function getColumns(width: number): number {
   return 5
 }
 
+export interface VirtualCardGridHandle {
+  scrollToItem: (id: number) => void
+}
+
 export function VirtualCardGrid<T extends { id: number }>({
   items,
   renderItem,
   estimateSize = 220,
+  controlRef,
 }: {
   items: T[]
   renderItem: (item: T) => React.ReactNode
   estimateSize?: number
+  controlRef?: React.RefObject<VirtualCardGridHandle | null>
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [cols, setCols] = useState(() => getColumns(window.innerWidth))
@@ -41,12 +47,26 @@ export function VirtualCardGrid<T extends { id: number }>({
     rows.push(items.slice(i, i + cols))
   }
 
+  const rowsRef = useRef<T[][]>(rows)
+  rowsRef.current = rows
+
   const virtualizer = useWindowVirtualizer({
     count: rows.length,
     estimateSize: () => estimateSize,
     overscan: 3,
     scrollMargin,
   })
+
+  useImperativeHandle(controlRef, () => ({
+    scrollToItem: (id: number) => {
+      const rowIndex = rowsRef.current.findIndex((row) =>
+        row.some((item) => item.id === id),
+      )
+      if (rowIndex >= 0) {
+        virtualizer.scrollToIndex(rowIndex, { align: "start" })
+      }
+    },
+  }))
 
   const virtualRows = virtualizer.getVirtualItems()
 

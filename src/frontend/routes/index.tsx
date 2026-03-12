@@ -24,8 +24,11 @@ import {
   IconPlus,
 } from "@tabler/icons-react"
 import { createFileRoute } from "@tanstack/react-router"
-import { useMemo, useState } from "react"
-import { VirtualCardGrid } from "@/frontend/components/VirtualCardGrid"
+import { useEffect, useMemo, useRef, useState } from "react"
+import {
+  type VirtualCardGridHandle,
+  VirtualCardGrid,
+} from "@/frontend/components/VirtualCardGrid"
 import {
   type Item,
   useCreateItemMutation,
@@ -41,10 +44,12 @@ function ItemCard({
   item,
   onViewNotes,
   onEdit,
+  highlighted,
 }: {
   item: Item
   onViewNotes: (item: Item) => void
   onEdit: (item: Item) => void
+  highlighted?: boolean
 }) {
   const displayTitle = item.custom_title || item.original_title
 
@@ -55,11 +60,12 @@ function ItemCard({
       radius="md"
       withBorder
       h="100%"
-      style={
-        item.is_archived === 1
+      style={{
+        ...(item.is_archived === 1
           ? { borderColor: "var(--mantine-color-gray-4)" }
-          : undefined
-      }
+          : {}),
+        ...(highlighted ? { animation: "cardFlash 1.5s ease-out" } : {}),
+      }}
     >
       <Card.Section h={500}>
         {item.images.length > 0 ? (
@@ -169,11 +175,17 @@ function IndexPage() {
   const [jsonInput, setJsonInput] = useState("")
   const [addError, setAddError] = useState<string | null>(null)
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false)
+  const [duplicateItemId, setDuplicateItemId] = useState<number | null>(null)
+  const [pendingScrollId, setPendingScrollId] = useState<number | null>(null)
+  const [highlightedItemId, setHighlightedItemId] = useState<number | null>(
+    null,
+  )
   const [search, setSearch] = useState("")
   const [debouncedSearch] = useDebouncedValue(search, 300)
   const [showArchived, setShowArchived] = useState(false)
   const [notesItem, setNotesItem] = useState<Item | null>(null)
   const [editItem, setEditItem] = useState<Item | null>(null)
+  const gridRef = useRef<VirtualCardGridHandle>(null)
 
   const { data: items = [] } = useItemsQuery()
   const createMutation = useCreateItemMutation()
@@ -233,8 +245,12 @@ function IndexPage() {
       setJsonInput("")
       setDuplicateModalOpen(false)
     } catch (err: unknown) {
-      const e = err as { status?: number; value?: { error?: string } }
+      const e = err as {
+        status?: number
+        value?: { error?: string; duplicateId?: number }
+      }
       if (e.status === 409) {
+        setDuplicateItemId(e.value?.duplicateId ?? null)
         setDuplicateModalOpen(true)
       } else {
         setAddError(e.value?.error ?? "Failed to add item")
@@ -242,8 +258,39 @@ function IndexPage() {
     }
   }
 
+  useEffect(() => {
+    if (pendingScrollId === null) return
+    const id = pendingScrollId
+    setPendingScrollId(null)
+    // Defer so the grid re-renders with the updated filter/search first
+    setTimeout(() => {
+      gridRef.current?.scrollToItem(id)
+      setHighlightedItemId(id)
+      setTimeout(() => setHighlightedItemId(null), 1500)
+    }, 50)
+  }, [pendingScrollId])
+
+  function handleGoToItem() {
+    if (duplicateItemId === null) return
+    const item = items.find((i) => i.id === duplicateItemId)
+    setSearch("")
+    setShowArchived(item?.is_archived === 1)
+    setDuplicateModalOpen(false)
+    setPendingScrollId(duplicateItemId)
+  }
+
   return (
     <Box>
+      <style>{`
+        @keyframes cardFlash {
+          0%   { box-shadow: none; }
+          20%  { box-shadow: 0 0 0 3px var(--mantine-color-orange-5); }
+          40%  { box-shadow: none; }
+          60%  { box-shadow: 0 0 0 3px var(--mantine-color-orange-5); }
+          80%  { box-shadow: none; }
+          100% { box-shadow: 0 0 0 3px var(--mantine-color-orange-5); }
+        }
+      `}</style>
       {/* Notes modal */}
       <Modal
         opened={notesItem !== null}
@@ -308,6 +355,11 @@ function IndexPage() {
           >
             Cancel
           </Button>
+          {duplicateItemId !== null && (
+            <Button variant="light" onClick={handleGoToItem}>
+              Go to item
+            </Button>
+          )}
           <Button
             color="orange"
             loading={createMutation.isPending}
@@ -357,7 +409,7 @@ function IndexPage() {
 
         <Divider my="sm" />
 
-        <Group gap="md">
+        <Group gap="md" align="center">
           <TextInput
             size="xs"
             placeholder="Search by title or notes…"
@@ -368,11 +420,13 @@ function IndexPage() {
           <Chip size="xs" checked={showArchived} onChange={setShowArchived}>
             {showArchived ? "Show Archived Only" : "Show Archived Only"}
           </Chip>
+          <Text size="sm">{items.length} items collected</Text>
         </Group>
       </Box>
 
       {/* Item grid */}
       <VirtualCardGrid
+        controlRef={gridRef}
         items={filteredItems}
         estimateSize={500}
         renderItem={(item) => (
@@ -381,6 +435,7 @@ function IndexPage() {
             item={item}
             onViewNotes={setNotesItem}
             onEdit={openEdit}
+            highlighted={item.id === highlightedItemId}
           />
         )}
       />
