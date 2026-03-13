@@ -40,6 +40,11 @@ export async function downloadThumbUrls(imageUrl: string): Promise<string> {
       const res = await fetch(url, { signal: controller.signal })
       clearTimeout(timeout)
 
+      if (res.status === 404) {
+        console.warn(`  404 for ${url} — dropping from image_url`)
+        continue
+      }
+
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
       const filename = `${randomUUID()}.jpg`
