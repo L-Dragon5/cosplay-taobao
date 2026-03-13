@@ -28,14 +28,18 @@ src/
   backend/
     db.ts              # MySQL connection + initDb() — creates tables if not exists
     index.ts           # Bun.serve entry point; mounts Elysia API at /api
+    queue.ts           # In-process async job queue; enqueueItemJobs() called after item create
     items/
       index.ts         # Elysia controller (routes)
       model.ts         # TypeScript types / DB row shape + resolveImages()
       service.ts       # Business logic / DB queries
+  lib/
+    thumbs.ts          # Pure downloadThumbUrls(imageUrl) — shared by backend queue + script
+    translate.ts       # Pure translateTitle(title) via Gemini API — shared by backend queue + script
   frontend/
-    App.tsx            # React root; wraps with MantineProvider, QueryClientProvider, RouterProvider
+    App.tsx            # React root; wraps with MantineProvider, Notifications, QueryClientProvider, RouterProvider
     api.ts             # Eden Treaty client — typed against backend App export
-    queries.ts         # React Query hooks (useItemsQuery, useCreateItemMutation, useUpdateItemMutation)
+    queries.ts         # React Query hooks (useItemsQuery, useCreateItemMutation, useUpdateItemMutation, useArchiveItemMutation, useUnarchiveItemMutation, useDeleteItemMutation)
     components/
       VirtualCardGrid.tsx   # Responsive virtual grid (1–5 cols by viewport width)
     routes/
@@ -47,8 +51,8 @@ public/
   index.tsx             # React DOM root
   thumbs/               # Downloaded thumbnail images (served as static files)
 scripts/
-  downloadThumbs.ts     # Downloads alicdn images, resizes to 400px wide JPEG via sharp, saves to public/thumbs/
-  translateTitles.ts    # Translates original_title (ZH→EN) via Gemini API, saves to translated_title
+  downloadThumbs.ts     # Thin wrapper — queries alicdn items via mysql2, calls downloadThumbUrls()
+  translateTitles.ts    # Thin wrapper — queries untranslated items via mysql2, calls translateTitle()
 ```
 
 ## Database Schema
@@ -118,17 +122,22 @@ bun run translate-titles # Translate untranslated item titles via Gemini (ZH→E
 - **Formatting**: Biome with 2-space indent, double quotes, no semicolons
 - **Backend pattern**: Controller (`index.ts`) → Service (`service.ts`) → Model types (`model.ts`) inside each feature folder
 - **Image thumbnails**: `image_url` may contain multiple `||`-delimited URLs; `public/thumbs/` holds locally cached copies (UUID filenames). Local paths start with `thumbs/` — `resolveImages()` in `model.ts` prepends `/` to make them root-relative. `downloadThumbs.ts` skips URLs that already contain `thumbs` (already local).
-- **Archiving**: Items use soft-delete (`is_archived` + `archived_at`); no hard deletes via the UI (DELETE endpoint exists for scripting)
+- **Archiving**: Items use soft-delete (`is_archived` + `archived_at`); the UI has archive, unarchive, and delete (hard) buttons. Delete is guarded by a confirmation modal.
+- **Background job queue**: `src/backend/queue.ts` exports `enqueueItemJobs(item)` — called in `service.ts` after a successful create. Jobs run sequentially in the same process: thumb download first (only if `image_url` contains `alicdn`), then translation. Lost on server restart but both operations are idempotent so the scripts / next enqueue will catch up.
 - **Duplicate detection**: Backend strips URL after first `&` and checks `listing_url LIKE %baseUrl%`; frontend shows a confirmation modal on 409
 - **Static file serving**: `decodeURIComponent` is applied to the pathname before `Bun.file()` so filenames with spaces (stored as `%20` in URLs) resolve correctly
 - **Scripts use `mysql2`**: Bun's built-in `bun:sql` module has a connection pool bug in standalone scripts that causes UPDATE queries to hang after ~2 executions. All `scripts/*.ts` files use `mysql2/promise` with a single `createConnection()` instead. The backend server continues to use `bun:sql` normally.
 
+## Shared Job Logic (`src/lib/`)
+
+- **`thumbs.ts`** — `downloadThumbUrls(imageUrl: string): Promise<string>` — splits `||`-delimited URLs, downloads any non-local ones, resizes to 600px wide JPEG via sharp, saves to `public/thumbs/`, returns updated URL string. No DB access.
+- **`translate.ts`** — `translateTitle(title: string): Promise<string | null>` — calls Gemini 3 Flash Preview to translate ZH→EN. Returns `"Error"` for blank/garbled titles, `null` on API failure (so the item can be retried). Reads `GEMINI_KEY` from env. No DB access.
+
 ## Translation Script (`scripts/translateTitles.ts`)
 
-- Reads items with `translated_title IS NULL`, newest first
-- Calls Gemini 3 Flash Preview API with a prompt to translate ZH→EN, returning only the translated text
-- Saves each translation immediately after the API call (progress is preserved if the script is interrupted)
-- Processes up to 1,000 items per run
+- Reads items with `translated_title IS NULL`, newest first (no limit)
+- Calls `translateTitle()` from `src/lib/translate.ts`
+- Saves each translation immediately (progress preserved on interrupt)
 - Crontab example (weekly Sunday at 2am): `0 2 * * 0 cd /path/to/cosplay-taobao && bun run translate-titles`
 
 ## Frontend — Index Page (`routes/index.tsx`)
@@ -137,11 +146,15 @@ bun run translate-titles # Translate untranslated item titles via Gemini (ZH→E
 - **Item grid**: `VirtualCardGrid` with `ItemCard` components
 - **ItemCard title priority**: `custom_title` → `translated_title` → `original_title`. When "Display Original Names" is checked, always shows `original_title`.
 - **ItemCard**: Mantine Carousel for images, archived gray border + badge + date, title, seller, price, button row pinned to bottom of card
-  - "View Listing" — opens Taobao URL in new tab
+  - Copy URL icon button — copies `listing_url` to clipboard and shows a green `@mantine/notifications` toast
+  - "View Listing" — opens Taobao URL in new tab; hovering for 500ms shows a popover with the full URL (closes 200ms after mouse leaves, stays open if mouse moves into the dropdown)
   - "Notes" — only shown when notes exist; opens read-only modal
   - "Edit" — opens form modal to edit `custom_title` and `notes`
+  - Archive/Unarchive/Delete icon buttons — archive when active, unarchive + delete when archived; delete opens a confirmation modal
 - **Search**: matches `original_title`, `custom_title`, `translated_title`, and `notes`
+- **Notifications**: `@mantine/notifications` is set up in `App.tsx` (`position="top-center"`); use `notifications.show()` for toasts
 - **Modals** (all defined once in `IndexPage`, shared across cards):
   - Duplicate confirmation modal (409 response)
   - Notes view modal (read-only, scrollable)
   - Edit modal (`useForm` with `custom_title` + `notes` fields, calls `PATCH /api/items/:id`)
+  - Delete confirmation modal (calls `DELETE /api/items/:id`)

@@ -46,3 +46,44 @@ export function useUpdateItemMutation() {
     },
   })
 }
+
+export function useArchiveItemMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const { data, error } = await api.items({ id: String(id) }).archive.post()
+      if (error) throw error
+      return data as Item
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["items"] })
+    },
+  })
+}
+
+export function useUnarchiveItemMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const { data, error } = await api.items({ id: String(id) }).unarchive.post()
+      if (error) throw error
+      return data as Item
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["items"] })
+    },
+  })
+}
+
+export function useDeleteItemMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const { error } = await api.items({ id: String(id) }).delete()
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["items"] })
+    },
+  })
+}

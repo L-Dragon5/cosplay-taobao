@@ -2,6 +2,7 @@ import { existsSync, unlinkSync } from "node:fs"
 import { join } from "node:path"
 import { db } from "@/backend/db"
 import { type Item, resolveImages } from "@/backend/items/model"
+import { enqueueItemJobs } from "@/backend/queue"
 
 function withImages(item: Item): Item {
   return { ...item, images: resolveImages(item.image_url) }
@@ -68,6 +69,8 @@ export async function create(body: {
 
   const [item] = await db<Item[]>`SELECT * FROM items WHERE id = ${insertedId}`
   if (!item) return { error: "Failed to retrieve created item" }
+
+  enqueueItemJobs({ id: item.id, image_url: item.image_url, original_title: item.original_title })
 
   return { item: withImages(item) }
 }

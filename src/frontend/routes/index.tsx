@@ -21,12 +21,17 @@ import {
 } from "@mantine/core"
 import { useForm } from "@mantine/form"
 import { useDebouncedValue, useWindowScroll } from "@mantine/hooks"
+import { notifications } from "@mantine/notifications"
 import {
+  IconArchive,
+  IconArchiveOff,
   IconArrowUp,
   IconEdit,
   IconExternalLink,
+  IconLink,
   IconNotes,
   IconPlus,
+  IconTrash,
 } from "@tabler/icons-react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useEffect, useMemo, useRef, useState } from "react"
@@ -36,8 +41,11 @@ import {
 } from "@/frontend/components/VirtualCardGrid"
 import {
   type Item,
+  useArchiveItemMutation,
   useCreateItemMutation,
+  useDeleteItemMutation,
   useItemsQuery,
+  useUnarchiveItemMutation,
   useUpdateItemMutation,
 } from "@/frontend/queries"
 
@@ -106,18 +114,50 @@ function ItemCard({
   item,
   onViewNotes,
   onEdit,
+  onCopyUrl,
+  onArchive,
+  onUnarchive,
+  onDelete,
   highlighted,
   showOriginalNames,
 }: {
   item: Item
   onViewNotes: (item: Item) => void
   onEdit: (item: Item) => void
+  onCopyUrl: (item: Item) => void
+  onArchive: (item: Item) => void
+  onUnarchive: (item: Item) => void
+  onDelete: (item: Item) => void
   highlighted?: boolean
   showOriginalNames?: boolean
 }) {
   const displayTitle = showOriginalNames
     ? item.original_title
     : item.custom_title || item.translated_title || item.original_title
+
+  const [urlPopoverOpen, setUrlPopoverOpen] = useState(false)
+  const urlOpenTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const urlCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function cancelUrlClose() {
+    if (urlCloseTimer.current) {
+      clearTimeout(urlCloseTimer.current)
+      urlCloseTimer.current = null
+    }
+  }
+
+  function handleViewListingMouseEnter() {
+    cancelUrlClose()
+    urlOpenTimer.current = setTimeout(() => setUrlPopoverOpen(true), 500)
+  }
+
+  function handleViewListingMouseLeave() {
+    if (urlOpenTimer.current) {
+      clearTimeout(urlOpenTimer.current)
+      urlOpenTimer.current = null
+    }
+    urlCloseTimer.current = setTimeout(() => setUrlPopoverOpen(false), 200)
+  }
 
   return (
     <Card
@@ -199,17 +239,44 @@ function ItemCard({
         )}
 
         <Group gap="xs">
-          <Button
-            component="a"
-            href={item.listing_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            size="compact-md"
-            rightSection={<IconExternalLink size={16} />}
-            flex={1}
+          <ActionIcon
+            variant="outline"
+            aria-label="Copy Listing URL"
+            onClick={() => onCopyUrl(item)}
           >
-            View Listing
-          </Button>
+            <IconLink />
+          </ActionIcon>
+          <Popover
+            opened={urlPopoverOpen}
+            position="top"
+            withArrow
+            shadow="md"
+            width={300}
+          >
+            <Popover.Target>
+              <Button
+                component="a"
+                href={item.listing_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                size="compact-md"
+                rightSection={<IconExternalLink size={16} />}
+                flex={1}
+                onMouseEnter={handleViewListingMouseEnter}
+                onMouseLeave={handleViewListingMouseLeave}
+              >
+                View Listing
+              </Button>
+            </Popover.Target>
+            <Popover.Dropdown
+              onMouseEnter={cancelUrlClose}
+              onMouseLeave={handleViewListingMouseLeave}
+            >
+              <Text size="xs" style={{ wordBreak: "break-all" }}>
+                {item.listing_url}
+              </Text>
+            </Popover.Dropdown>
+          </Popover>
           {item.notes && (
             <Button
               size="compact-md"
@@ -229,6 +296,35 @@ function ItemCard({
           >
             Edit
           </Button>
+          {item.is_archived ? (
+            <>
+              <ActionIcon
+                variant="light"
+                color="gray"
+                aria-label="Unarchive item"
+                onClick={() => onUnarchive(item)}
+              >
+                <IconArchiveOff />
+              </ActionIcon>
+              <ActionIcon
+                variant="filled"
+                color="red"
+                aria-label="Delete item"
+                onClick={() => onDelete(item)}
+              >
+                <IconTrash />
+              </ActionIcon>
+            </>
+          ) : (
+            <ActionIcon
+              variant="filled"
+              color="red"
+              aria-label="Archive item"
+              onClick={() => onArchive(item)}
+            >
+              <IconArchive />
+            </ActionIcon>
+          )}
         </Group>
       </Stack>
     </Card>
@@ -262,9 +358,14 @@ function IndexPage() {
 
   const [scroll] = useWindowScroll()
 
+  const [deleteItem, setDeleteItem] = useState<Item | null>(null)
+
   const { data: items = [] } = useItemsQuery()
   const createMutation = useCreateItemMutation()
   const updateMutation = useUpdateItemMutation()
+  const archiveMutation = useArchiveItemMutation()
+  const unarchiveMutation = useUnarchiveItemMutation()
+  const deleteMutation = useDeleteItemMutation()
 
   const editForm = useForm({
     initialValues: { custom_title: "", notes: "" },
@@ -415,6 +516,35 @@ function IndexPage() {
         </form>
       </Modal>
 
+      {/* Delete confirmation modal */}
+      <Modal
+        opened={deleteItem !== null}
+        onClose={() => setDeleteItem(null)}
+        title="Delete item"
+        centered
+      >
+        <Text size="sm">
+          Are you sure you want to permanently delete this item? This cannot be
+          undone.
+        </Text>
+        <Group justify="flex-end" mt="md">
+          <Button variant="default" onClick={() => setDeleteItem(null)}>
+            Cancel
+          </Button>
+          <Button
+            color="red"
+            loading={deleteMutation.isPending}
+            onClick={async () => {
+              if (!deleteItem) return
+              await deleteMutation.mutateAsync(deleteItem.id)
+              setDeleteItem(null)
+            }}
+          >
+            Delete
+          </Button>
+        </Group>
+      </Modal>
+
       <Modal
         opened={duplicateModalOpen}
         onClose={() => setDuplicateModalOpen(false)}
@@ -504,7 +634,11 @@ function IndexPage() {
           >
             Display Original Names
           </Chip>
-          <Chip size="xs" checked={preserveScroll} onChange={togglePreserveScroll}>
+          <Chip
+            size="xs"
+            checked={preserveScroll}
+            onChange={togglePreserveScroll}
+          >
             Remember Scroll
           </Chip>
           <Text size="sm">{items.length} items collected</Text>
@@ -541,6 +675,13 @@ function IndexPage() {
             item={item}
             onViewNotes={setNotesItem}
             onEdit={openEdit}
+            onCopyUrl={(i) => {
+              navigator.clipboard.writeText(i.listing_url)
+              notifications.show({ message: "URL copied to clipboard", color: "green", autoClose: 2000 })
+            }}
+            onArchive={(i) => archiveMutation.mutate(i.id)}
+            onUnarchive={(i) => unarchiveMutation.mutate(i.id)}
+            onDelete={setDeleteItem}
             highlighted={item.id === highlightedItemId}
             showOriginalNames={showOriginalNames}
           />
