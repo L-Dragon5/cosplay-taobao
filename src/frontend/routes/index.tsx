@@ -676,7 +676,18 @@ function IndexPage() {
             onViewNotes={setNotesItem}
             onEdit={openEdit}
             onCopyUrl={(i) => {
-              navigator.clipboard.writeText(i.listing_url)
+              if (navigator.clipboard) {
+                navigator.clipboard.writeText(i.listing_url)
+              } else {
+                const el = document.createElement("textarea")
+                el.value = i.listing_url
+                el.style.position = "fixed"
+                el.style.opacity = "0"
+                document.body.appendChild(el)
+                el.select()
+                document.execCommand("copy")
+                document.body.removeChild(el)
+              }
               notifications.show({ message: "URL copied to clipboard", color: "green", autoClose: 2000 })
             }}
             onArchive={(i) => archiveMutation.mutate(i.id)}
