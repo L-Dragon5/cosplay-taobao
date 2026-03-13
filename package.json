@@ -7,7 +7,7 @@
     "generate-routes": "tsr generate",
     "watch-routes": "tsr watch",
     "dev": "bun run generate-routes && bun --hot src/backend/index.ts",
-    "build": "bun run generate-routes && bun build --production --compile --minify --target bun-linux-x64 --outfile server src/backend/index.ts",
+    "build": "bun run generate-routes && bun build --production --compile --minify --target bun-linux-x64 --outfile server src/backend/index.ts && bun build --production --compile --minify --target bun-linux-x64 --outfile download-thumbs scripts/downloadThumbs.ts && bun build --production --compile --minify --target bun-linux-x64 --outfile translate-titles scripts/translateTitles.ts",
     "start": "NODE_ENV=production bun dist/index.ts",
     "test": "bun test",
     "lint": "bunx --bun @biomejs/biome check --write",

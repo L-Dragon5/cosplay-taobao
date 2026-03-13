@@ -34,6 +34,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 
 server
+download-thumbs
+translate-titles
 .claude
 .tanstack
 

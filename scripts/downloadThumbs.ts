@@ -1,5 +1,3 @@
-import { mkdirSync } from "node:fs"
-import { join } from "node:path"
 import mysql from "mysql2/promise"
 import { downloadThumbUrls } from "@/lib/thumbs"
 
@@ -12,8 +10,6 @@ const conn = await mysql.createConnection({
   password: DB_PASS,
   database: DB_DATABASE,
 })
-
-mkdirSync(join(process.cwd(), "public", "thumbs"), { recursive: true })
 
 const [rows] = await conn.query<mysql.RowDataPacket[]>(
   "SELECT id, image_url FROM items WHERE image_url LIKE '%alicdn%' ORDER BY created_at DESC",
