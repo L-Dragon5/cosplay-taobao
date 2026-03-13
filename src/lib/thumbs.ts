@@ -1,15 +1,17 @@
 import { randomUUID } from "node:crypto"
 import { mkdirSync } from "node:fs"
 import { join } from "node:path"
-import sharp from "sharp"
 
 const thumbsDir = join(process.cwd(), "public", "thumbs")
 mkdirSync(thumbsDir, { recursive: true })
 
 /**
  * Given a ||-delimited image_url string, downloads any alicdn URLs,
- * resizes to 600px wide JPEG, saves to public/thumbs/, and returns
- * the updated ||-delimited string with local paths substituted.
+ * saves to public/thumbs/, and returns the updated ||-delimited string
+ * with local paths substituted.
+ *
+ * alicdn serves JPEG when the .webp suffix is stripped, so we rewrite
+ * those URLs before fetching rather than converting after.
  */
 export async function downloadThumbUrls(imageUrl: string): Promise<string> {
   const urls = imageUrl.split("||")
@@ -25,6 +27,13 @@ export async function downloadThumbUrls(imageUrl: string): Promise<string> {
       url = `https:${url}`
     }
 
+    // alicdn URLs contain multiple extensions (e.g. filename.jpg_q50.jpg_.webp)
+    // truncate at the first .jpg to get a clean JPEG URL
+    const jpgIndex = url.indexOf(".jpg")
+    if (jpgIndex !== -1) {
+      url = url.slice(0, jpgIndex + 4)
+    }
+
     try {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 10_000)
@@ -33,14 +42,10 @@ export async function downloadThumbUrls(imageUrl: string): Promise<string> {
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
-      const buffer = Buffer.from(await res.arrayBuffer())
       const filename = `${randomUUID()}.jpg`
       const filePath = join(thumbsDir, filename)
 
-      await sharp(buffer)
-        .resize({ width: 600, withoutEnlargement: true })
-        .jpeg({ quality: 100 })
-        .toFile(filePath)
+      await Bun.write(filePath, await res.arrayBuffer())
 
       savedUrls.push(`thumbs/${filename}`)
     } catch (err) {

@@ -19,7 +19,6 @@ A full-stack web app for saving and browsing Taobao cosplay listings. Users past
 | Database | MySQL via `bun:sql` (backend server) / `mysql2` (scripts) |
 | Linter/Formatter | Biome |
 | Virtualization | TanStack React Virtual |
-| Image processing | sharp |
 
 ## Project Structure
 
@@ -130,7 +129,7 @@ bun run translate-titles # Translate untranslated item titles via Gemini (ZH→E
 
 ## Shared Job Logic (`src/lib/`)
 
-- **`thumbs.ts`** — `downloadThumbUrls(imageUrl: string): Promise<string>` — splits `||`-delimited URLs, downloads any non-local ones, resizes to 600px wide JPEG via sharp, saves to `public/thumbs/`, returns updated URL string. No DB access.
+- **`thumbs.ts`** — `downloadThumbUrls(imageUrl: string): Promise<string>` — splits `||`-delimited URLs, downloads any non-local ones, saves to `public/thumbs/` via `Bun.write()`. alicdn URLs ending in `.webp` have the suffix stripped before fetching so the JPEG version is served directly. No DB access.
 - **`translate.ts`** — `translateTitle(title: string): Promise<string | null>` — calls Gemini 3 Flash Preview to translate ZH→EN. Returns `"Error"` for blank/garbled titles, `null` on API failure (so the item can be retried). Reads `GEMINI_KEY` from env. No DB access.
 
 ## Translation Script (`scripts/translateTitles.ts`)
