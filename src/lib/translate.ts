@@ -1,5 +1,5 @@
 const GEMINI_API_BASE =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent"
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
 
 /**
  * Translates a Chinese product title to English via Gemini.
