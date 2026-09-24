@@ -86,6 +86,9 @@ name) and `thumbs/` (every cached thumbnail).
   file is refused before anything changes), backs up what is there and stops if
   that fails, loads the database, swaps the thumbnails, then reports row counts.
   A bad restore is undone by restoring the safety backup it names.
+- **Web uploads go up to 8GB** (`MAX_UPLOAD_BYTES`, Bun's default is 128MB) and
+  are held in RAM while parsed, so the host needs about the archive's size free.
+  A proxy in front needs its own body limit at least that high (NPM ships 2000m).
 - `THUMBS_DIR` overrides where backup/restore read and write thumbnails (default
   `public/thumbs`), for a host that runs the app from another directory.
 - The backups sit on the same disk as the data. Copy `backups/` somewhere else

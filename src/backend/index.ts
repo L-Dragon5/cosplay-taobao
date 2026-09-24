@@ -1,6 +1,6 @@
 import { openapi } from "@elysiajs/openapi"
 import { Elysia } from "elysia"
-import { backupController } from "@/backend/backup"
+import { backupController, MAX_UPLOAD_BYTES } from "@/backend/backup"
 import { initDb } from "@/backend/db"
 import { itemsController } from "@/backend/items"
 import indexHtml from "../../public/index.html"
@@ -17,6 +17,7 @@ const api = new Elysia({ prefix: "/api" })
   .use(backupController)
 
 const server = Bun.serve({
+  maxRequestBodySize: MAX_UPLOAD_BYTES,
   routes: {
     "/": indexHtml,
   },

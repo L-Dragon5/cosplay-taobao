@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { backupController } from "@/backend/backup"
+import { backupController, MAX_UPLOAD_BYTES } from "@/backend/backup"
 import {
   connArgs,
   dbName,
@@ -148,6 +148,28 @@ test("POST /backup/restore refuses a file that is not a backup, touching nothing
   )
   expect(res.status).toBe(400)
   expect((await res.json()).error).toMatch(/not a backup/)
+})
+
+test("an upload past Bun's 128MB default reaches the restore handler", async () => {
+  // Regression: Bun.serve cut an 874MB upload off with a 413 before the handler
+  // ran, and the browser showed "Failed to fetch". Over a real socket, since
+  // .handle() skips the server's body limit. A 400 means it got through.
+  const server = Bun.serve({
+    port: 0,
+    maxRequestBodySize: MAX_UPLOAD_BYTES,
+    fetch: (req) => backupController.handle(req),
+  })
+  try {
+    const form = new FormData()
+    form.append("file", new File([new Uint8Array(129 * 1024 ** 2)], "x.tar.gz"))
+    const res = await fetch(new URL("/backup/restore", server.url), {
+      method: "POST",
+      body: form,
+    })
+    expect(res.status).toBe(400)
+  } finally {
+    server.stop(true)
+  }
 })
 
 test("restore refuses a bad archive before it reads DB_*, so no .env is needed", async () => {
