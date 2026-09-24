@@ -12,7 +12,9 @@
     "test": "bun test",
     "lint": "bunx --bun @biomejs/biome check --write",
     "download-thumbs": "bun run scripts/downloadThumbs.ts",
-    "translate-titles": "bun run scripts/translateTitles.ts"
+    "translate-titles": "bun run scripts/translateTitles.ts",
+    "backup": "bun run scripts/backup.ts",
+    "restore": "bun run scripts/restore.ts"
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",

@@ -16,7 +16,8 @@ A full-stack web app for saving and browsing Taobao cosplay listings. Users past
 | State | Jotai |
 | Data Fetching | TanStack React Query + Eden Treaty (type-safe API client) |
 | Routing | TanStack Router (file-based) |
-| Database | MySQL via `bun:sql` (backend server) / `mysql2` (scripts) |
+| Database | MariaDB 11.8 via `bun:sql` (backend server) / `mysql2` (scripts) |
+| Deploy | Docker compose on Komodo |
 | Linter/Formatter | Biome |
 | Virtualization | TanStack React Virtual |
 
@@ -28,6 +29,11 @@ src/
     db.ts              # MySQL connection + initDb() — creates tables if not exists
     index.ts           # Bun.serve entry point; mounts Elysia API at /api
     queue.ts           # In-process async job queue; enqueueItemJobs() called after item create
+    backup/
+      index.ts         # /api/backup routes (download, restore upload)
+      service.ts       # mysqldump + tar backup, restore, prune
+    tests/
+      backup.test.ts   # Gate tests for the backup service
     items/
       index.ts         # Elysia controller (routes)
       model.ts         # TypeScript types / DB row shape + resolveImages()
@@ -41,6 +47,7 @@ src/
     queries.ts         # React Query hooks (useItemsQuery, useCreateItemMutation, useUpdateItemMutation, useArchiveItemMutation, useUnarchiveItemMutation, useDeleteItemMutation)
     components/
       VirtualCardGrid.tsx   # Responsive virtual grid (1–5 cols by viewport width)
+      BackupMenu.tsx        # Header database icon: Download backup / Restore from backup modal
     routes/
       __root.tsx        # AppShell layout with orange header
       index.tsx         # Index route — item grid with toolbar, search, modals
@@ -99,6 +106,10 @@ bun run generate-routes  # One-shot TanStack Router route generation
 bun run watch-routes     # Watch mode route generation
 bun run download-thumbs  # Download + cache alicdn images to public/thumbs/
 bun run translate-titles # Translate untranslated item titles via Gemini (ZH→EN)
+bun run backup           # db.sql + thumbs/ -> backups/cosplay-taobao-<stamp>.tar.gz, prunes >30d
+bun run restore <file>   # Replace DB + thumbs from an archive (safety backup first)
+bun test                 # Gate tests (no DB needed)
+scripts/docker-smoke.sh  # Container end-to-end: build, backup, wipe, restore
 ```
 
 ## API
@@ -109,6 +120,8 @@ bun run translate-titles # Translate untranslated item titles via Gemini (ZH→E
 - `POST   /api/items`            — create item; body `{ json: string, override?: boolean }`; returns 409 on duplicate URL
 - `PATCH  /api/items/:id`        — update `custom_title` and/or `notes`
 - `DELETE /api/items/:id`        — hard delete (also removes local thumb files)
+- `GET    /api/backup`          — build a fresh .tar.gz (db.sql + thumbs/), keep a copy in backups/, download it
+- `POST   /api/backup/restore`  — multipart `file`; replaces DB + thumbs; 400 if not a backup, 409 if one is running
 - `POST   /api/items/:id/archive`   — soft-archive
 - `POST   /api/items/:id/unarchive` — unarchive
 - Backend exports `App` type; frontend imports it for Eden Treaty inference
@@ -127,6 +140,14 @@ bun run translate-titles # Translate untranslated item titles via Gemini (ZH→E
 - **Static file serving**: `decodeURIComponent` is applied to the pathname before `Bun.file()` so filenames with spaces (stored as `%20` in URLs) resolve correctly
 - **Scripts use `mysql2`**: Bun's built-in `bun:sql` module has a connection pool bug in standalone scripts that causes UPDATE queries to hang after ~2 executions. All `scripts/*.ts` files use `mysql2/promise` with a single `createConnection()` instead. The backend server continues to use `bun:sql` normally.
 
+## Deployment and backups
+
+- Runs as a Komodo compose stack: `compose.yaml` (app + `mariadb:11.8`), `Dockerfile` runs from source (`bun src/backend/index.ts`, `NODE_ENV=production`). App on host port `${PORT:-3002}`, DB on `127.0.0.1:3309`.
+- Volumes: `thumbs` -> `/app/public/thumbs`, `./backups` -> `/app/backups`, `dbdata` for MariaDB.
+- `src/backend/backup/service.ts` holds all backup/restore logic, shared by `/api/backup` (controller `src/backend/backup/index.ts`, one `busy` flag), `scripts/backup.ts`, `scripts/restore.ts`, and the header `BackupMenu` component. Ported from `../cosplay-closet`.
+- `THUMBS_DIR` env overrides the thumbs path for backup/restore only.
+- Full Komodo settings, Actions, and the one-time migration off the binary are in README.
+
 ## Shared Job Logic (`src/lib/`)
 
 - **`thumbs.ts`** — `downloadThumbUrls(imageUrl: string): Promise<string>` — splits `||`-delimited URLs, downloads any non-local ones, saves to `public/thumbs/` via `Bun.write()`. alicdn URLs ending in `.webp` have the suffix stripped before fetching so the JPEG version is served directly. No DB access.
@@ -137,7 +158,7 @@ bun run translate-titles # Translate untranslated item titles via Gemini (ZH→E
 - Reads items with `translated_title IS NULL`, newest first (no limit)
 - Calls `translateTitle()` from `src/lib/translate.ts`
 - Saves each translation immediately (progress preserved on interrupt)
-- Crontab example (weekly Sunday at 2am): `0 2 * * 0 cd /path/to/cosplay-taobao && bun run translate-titles`
+- In the Docker stack it runs nightly from a Komodo Action (README, "Deploying with Komodo")
 
 ## Frontend — Index Page (`routes/index.tsx`)
 

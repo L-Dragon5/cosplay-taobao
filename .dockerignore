@@ -1,0 +1,10 @@
+.git
+.claude
+.tanstack
+node_modules
+backups
+public/thumbs
+server
+download-thumbs
+translate-titles
+.env

@@ -1,6 +1,7 @@
 import { AppShell, Group, Text } from "@mantine/core"
 import { createRootRoute, Outlet } from "@tanstack/react-router"
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools"
+import { BackupMenu } from "@/frontend/components/BackupMenu"
 
 const RootLayout = () => (
   <AppShell header={{ height: 60 }} padding="md">
@@ -9,6 +10,7 @@ const RootLayout = () => (
         <Text fw={700} size="lg">
           Cosplay Taobao
         </Text>
+        <BackupMenu />
       </Group>
     </AppShell.Header>
     <AppShell.Main>

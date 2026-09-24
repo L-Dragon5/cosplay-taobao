@@ -1,5 +1,6 @@
 import { openapi } from "@elysiajs/openapi"
 import { Elysia } from "elysia"
+import { backupController } from "@/backend/backup"
 import { initDb } from "@/backend/db"
 import { itemsController } from "@/backend/items"
 import indexHtml from "../../public/index.html"
@@ -13,6 +14,7 @@ const api = new Elysia({ prefix: "/api" })
     }),
   )
   .use(itemsController)
+  .use(backupController)
 
 const server = Bun.serve({
   routes: {
@@ -33,7 +35,8 @@ const server = Bun.serve({
     // Fall back to SPA shell for all other paths
     return new Response(Bun.file("public/index.html"))
   },
-  development: {
+  // Off in the container (NODE_ENV=production): a minified bundle, no HMR.
+  development: process.env.NODE_ENV !== "production" && {
     hmr: true,
     console: true,
   },
