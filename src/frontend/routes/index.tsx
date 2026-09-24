@@ -36,8 +36,8 @@ import {
 import { createFileRoute } from "@tanstack/react-router"
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
-  type VirtualCardGridHandle,
   VirtualCardGrid,
+  type VirtualCardGridHandle,
 } from "@/frontend/components/VirtualCardGrid"
 import {
   type Item,
@@ -688,7 +688,11 @@ function IndexPage() {
                 document.execCommand("copy")
                 document.body.removeChild(el)
               }
-              notifications.show({ message: "URL copied to clipboard", color: "green", autoClose: 2000 })
+              notifications.show({
+                message: "URL copied to clipboard",
+                color: "green",
+                autoClose: 2000,
+              })
             }}
             onArchive={(i) => archiveMutation.mutate(i.id)}
             onUnarchive={(i) => unarchiveMutation.mutate(i.id)}

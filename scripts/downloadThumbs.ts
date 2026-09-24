@@ -27,7 +27,10 @@ console.log(`Items found to edit: ${items.length}`)
 for (const item of items) {
   console.log(`Current item id: ${item.id}`)
   const newImageUrl = await downloadThumbUrls(item.image_url)
-  await conn.execute("UPDATE items SET image_url = ? WHERE id = ?", [newImageUrl, item.id])
+  await conn.execute("UPDATE items SET image_url = ? WHERE id = ?", [
+    newImageUrl,
+    item.id,
+  ])
   console.log(`  Updated item ${item.id}`)
 }
 
