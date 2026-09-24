@@ -1,11 +1,26 @@
 import { existsSync, unlinkSync } from "node:fs"
 import { join } from "node:path"
 import { db } from "@/backend/db"
-import { type Item, resolveImages } from "@/backend/items/model"
+import {
+  duplicatePattern,
+  type Item,
+  resolveImages,
+} from "@/backend/items/model"
 import { enqueueItemJobs } from "@/backend/queue"
 
 function withImages(item: Item): Item {
   return { ...item, images: resolveImages(item.image_url) }
+}
+
+// Mutations run UPDATE then this SELECT. affectedRows can't signal "not found":
+// MariaDB reports 0 when the new values equal the old ones.
+async function findItem(id: number): Promise<Item | undefined> {
+  const [item] = await db<Item[]>`SELECT * FROM items WHERE id = ${id}`
+  return item && withImages(item)
+}
+
+function found(item: Item | undefined): { error?: string; item?: Item } {
+  return item ? { item } : { error: "Item not found" }
 }
 
 export async function retrieveAll(): Promise<Item[]> {
@@ -19,7 +34,12 @@ export async function retrieveAll(): Promise<Item[]> {
 export async function create(body: {
   json: string
   override?: boolean
-}): Promise<{ error?: string; duplicate?: boolean; duplicateId?: number; item?: Item }> {
+}): Promise<{
+  error?: string
+  duplicate?: boolean
+  duplicateId?: number
+  item?: Item
+}> {
   let info: Record<string, unknown>
 
   try {
@@ -37,15 +57,16 @@ export async function create(body: {
     return { error: "No listing URL found in JSON" }
   }
 
-  if (!body.override) {
-    const idMatch = listingUrl.match(/[?&]id=([^&]+)/)
-    const itemId = idMatch?.[1]
-    if (itemId) {
-      const dupes = await db<{ id: number }[]>`
-        SELECT id FROM items WHERE listing_url LIKE ${`%id=${itemId}%`} LIMIT 1
-      `
-      if (dupes.length > 0) {
-        return { error: "Item already exists", duplicate: true, duplicateId: dupes[0]?.id }
+  const pattern = duplicatePattern(listingUrl)
+  if (!body.override && pattern) {
+    const dupes = await db<{ id: number }[]>`
+      SELECT id FROM items WHERE listing_url REGEXP ${pattern} LIMIT 1
+    `
+    if (dupes.length > 0) {
+      return {
+        error: "Item already exists",
+        duplicate: true,
+        duplicateId: dupes[0]?.id,
       }
     }
   }
@@ -58,19 +79,20 @@ export async function create(body: {
   const sellerName = typeof info.seller === "string" ? info.seller : null
   const originalPrice = info.price != null ? String(info.price) : null
 
-  await db`
+  // RETURNING instead of a follow-up SELECT LAST_INSERT_ID(): the pool may run
+  // that second query on another connection and get 0 or someone else's id.
+  const [item] = await db<Item[]>`
     INSERT INTO items (image_url, original_title, seller_name, listing_url, original_price)
     VALUES (${imageUrl}, ${originalTitle}, ${sellerName}, ${listingUrl}, ${originalPrice})
+    RETURNING *
   `
+  if (!item) return { error: "Failed to create item" }
 
-  const [row] = await db<{ id: number }[]>`SELECT LAST_INSERT_ID() as id`
-  const insertedId = row?.id
-  if (!insertedId) return { error: "Failed to create item" }
-
-  const [item] = await db<Item[]>`SELECT * FROM items WHERE id = ${insertedId}`
-  if (!item) return { error: "Failed to retrieve created item" }
-
-  enqueueItemJobs({ id: item.id, image_url: item.image_url, original_title: item.original_title })
+  enqueueItemJobs({
+    id: item.id,
+    image_url: item.image_url,
+    original_title: item.original_title,
+  })
 
   return { item: withImages(item) }
 }
@@ -79,26 +101,14 @@ export async function update(
   id: number,
   body: { custom_title?: string | null; notes?: string | null },
 ): Promise<{ error?: string; item?: Item }> {
-  const [existing] = await db<
-    Item[]
-  >`SELECT * FROM items WHERE id = ${id} LIMIT 1`
-  if (!existing) return { error: "Item not found" }
-
-  const customTitle =
-    "custom_title" in body ? body.custom_title : existing.custom_title
-  const notes = "notes" in body ? body.notes : existing.notes
-
-  await db`
-    UPDATE items
-    SET custom_title = ${customTitle ?? null},
-        notes = ${notes ?? null}
-    WHERE id = ${id}
-  `
-
-  const [item] = await db<Item[]>`SELECT * FROM items WHERE id = ${id}`
-  if (!item) return { error: "Failed to retrieve updated item" }
-
-  return { item: withImages(item) }
+  // Only the keys present in the body change; an explicit null clears the field.
+  const fields: Record<string, string | null> = {}
+  if ("custom_title" in body) fields.custom_title = body.custom_title ?? null
+  if ("notes" in body) fields.notes = body.notes ?? null
+  if (Object.keys(fields).length > 0) {
+    await db`UPDATE items SET ${db(fields)} WHERE id = ${id}`
+  }
+  return found(await findItem(id))
 }
 
 export async function deleteItem(id: number): Promise<{ error?: string }> {
@@ -124,39 +134,21 @@ export async function deleteItem(id: number): Promise<{ error?: string }> {
 export async function archive(
   id: number,
 ): Promise<{ error?: string; item?: Item }> {
-  const [existing] = await db<
-    Item[]
-  >`SELECT * FROM items WHERE id = ${id} LIMIT 1`
-  if (!existing) return { error: "Item not found" }
-
   await db`
     UPDATE items
     SET is_archived = 1, archived_at = CURRENT_TIMESTAMP
     WHERE id = ${id}
   `
-
-  const [item] = await db<Item[]>`SELECT * FROM items WHERE id = ${id}`
-  if (!item) return { error: "Failed to retrieve item" }
-
-  return { item: withImages(item) }
+  return found(await findItem(id))
 }
 
 export async function unarchive(
   id: number,
 ): Promise<{ error?: string; item?: Item }> {
-  const [existing] = await db<
-    Item[]
-  >`SELECT * FROM items WHERE id = ${id} LIMIT 1`
-  if (!existing) return { error: "Item not found" }
-
   await db`
     UPDATE items
     SET is_archived = 0, archived_at = NULL
     WHERE id = ${id}
   `
-
-  const [item] = await db<Item[]>`SELECT * FROM items WHERE id = ${id}`
-  if (!item) return { error: "Failed to retrieve item" }
-
-  return { item: withImages(item) }
+  return found(await findItem(id))
 }

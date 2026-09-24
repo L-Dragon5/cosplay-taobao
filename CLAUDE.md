@@ -26,6 +26,7 @@ A full-stack web app for saving and browsing Taobao cosplay listings. Users past
 ```
 src/
   backend/
+    static.ts          # publicPath(): request path -> file in public/, traversal-safe
     db.ts              # MySQL connection + initDb() — creates tables if not exists
     index.ts           # Bun.serve entry point; mounts Elysia API at /api
     queue.ts           # In-process async job queue; enqueueItemJobs() called after item create
@@ -108,7 +109,8 @@ bun run download-thumbs  # Download + cache alicdn images to public/thumbs/
 bun run translate-titles # Translate untranslated item titles via Gemini (ZH→EN)
 bun run backup           # db.sql + thumbs/ -> backups/cosplay-taobao-<stamp>.tar.gz, prunes >30d
 bun run restore <file>   # Replace DB + thumbs from an archive (safety backup first)
-bun test                 # Gate tests (no DB needed)
+bun test                 # Gate tests (no DB needed; items.db.test.ts skips)
+TEST_DB_DATABASE=cosplay_taobao_test DB_HOST=127.0.0.1 DB_PORT=3306 DB_USER=root DB_PASS= bun test items.db  # service tests on a throwaway MariaDB database
 bun run typecheck        # tsc --noEmit (TypeScript 5, zero errors)
 scripts/docker-smoke.sh  # Container end-to-end: build, backup, wipe, restore
 ```
@@ -137,8 +139,10 @@ scripts/docker-smoke.sh  # Container end-to-end: build, backup, wipe, restore
 - **Image thumbnails**: `image_url` may contain multiple `||`-delimited URLs; `public/thumbs/` holds locally cached copies (UUID filenames). Local paths start with `thumbs/` — `resolveImages()` in `model.ts` prepends `/` to make them root-relative. `downloadThumbs.ts` skips URLs that already contain `thumbs` (already local).
 - **Archiving**: Items use soft-delete (`is_archived` + `archived_at`); the UI has archive, unarchive, and delete (hard) buttons. Delete is guarded by a confirmation modal.
 - **Background job queue**: `src/backend/queue.ts` exports `enqueueItemJobs(item)` — called in `service.ts` after a successful create. Jobs run sequentially in the same process: thumb download first (only if `image_url` contains `alicdn`), then translation. Lost on server restart but both operations are idempotent so the scripts / next enqueue will catch up.
-- **Duplicate detection**: Backend strips URL after first `&` and checks `listing_url LIKE %baseUrl%`; frontend shows a confirmation modal on 409
-- **Static file serving**: `decodeURIComponent` is applied to the pathname before `Bun.file()` so filenames with spaces (stored as `%20` in URLs) resolve correctly
+- **Duplicate detection**: `duplicatePattern()` in `items/model.ts` pulls the numeric `id=` from the URL and matches `listing_url REGEXP '[?&]id=<id>([^0-9]|$)'` (exact id, so 123 never matches 1234); frontend shows a confirmation modal on 409
+- **Static file serving**: `publicPath()` in `src/backend/static.ts` decodes the pathname (so `%20` filenames resolve) and returns null for anything that resolves outside `public/` (`..%2F` survives URL normalization). Never pass a request path to `Bun.file()` without it.
+- **Inserts use `RETURNING *`**, never a follow-up `SELECT LAST_INSERT_ID()`: the `bun:sql` pool can run the second query on another connection.
+- **Mutations update the React Query cache** with the returned row (`setQueryData`) instead of refetching `/api/items`.
 - **Scripts use `mysql2`**: Bun's built-in `bun:sql` module has a connection pool bug in standalone scripts that causes UPDATE queries to hang after ~2 executions. All `scripts/*.ts` files use `mysql2/promise` with a single `createConnection()` instead. The backend server continues to use `bun:sql` normally.
 
 ## Deployment and backups

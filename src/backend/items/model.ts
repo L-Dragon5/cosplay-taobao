@@ -26,3 +26,12 @@ export function resolveImages(imageUrl: string | null): string[] {
       return img
     })
 }
+
+/**
+ * MariaDB REGEXP matching the listing's exact Taobao id, or null if the URL
+ * has none. A plain LIKE '%id=123%' would also match id=1234.
+ */
+export function duplicatePattern(listingUrl: string): string | null {
+  const id = listingUrl.match(/[?&]id=(\d+)/)?.[1]
+  return id ? `[?&]id=${id}([^0-9]|$)` : null
+}

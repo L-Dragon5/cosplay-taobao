@@ -4,6 +4,19 @@ import { api } from "@/frontend/api"
 
 export type { Item }
 
+// Mutations write the server's returned row into the cache instead of
+// refetching the whole list. The list is newest-first, so a new item goes on top.
+function replaceItem(items: Item[], item: Item): Item[] {
+  return items.map((i) => (i.id === item.id ? item : i))
+}
+
+function setItems(
+  queryClient: ReturnType<typeof useQueryClient>,
+  fn: (items: Item[]) => Item[],
+) {
+  queryClient.setQueryData<Item[]>(["items"], (items) => items && fn(items))
+}
+
 export function useItemsQuery() {
   return useQuery<Item[]>({
     queryKey: ["items"],
@@ -22,8 +35,8 @@ export function useCreateItemMutation() {
       if (error) throw error
       return data as Item
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["items"] })
+    onSuccess: (item) => {
+      setItems(queryClient, (items) => [item, ...items])
     },
   })
 }
@@ -41,8 +54,8 @@ export function useUpdateItemMutation() {
       if (error) throw error
       return data as Item
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["items"] })
+    onSuccess: (item) => {
+      setItems(queryClient, (items) => replaceItem(items, item))
     },
   })
 }
@@ -55,8 +68,8 @@ export function useArchiveItemMutation() {
       if (error) throw error
       return data as Item
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["items"] })
+    onSuccess: (item) => {
+      setItems(queryClient, (items) => replaceItem(items, item))
     },
   })
 }
@@ -65,12 +78,14 @@ export function useUnarchiveItemMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (id: number) => {
-      const { data, error } = await api.items({ id: String(id) }).unarchive.post()
+      const { data, error } = await api
+        .items({ id: String(id) })
+        .unarchive.post()
       if (error) throw error
       return data as Item
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["items"] })
+    onSuccess: (item) => {
+      setItems(queryClient, (items) => replaceItem(items, item))
     },
   })
 }
@@ -82,8 +97,8 @@ export function useDeleteItemMutation() {
       const { error } = await api.items({ id: String(id) }).delete()
       if (error) throw error
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["items"] })
+    onSuccess: (_, id) => {
+      setItems(queryClient, (items) => items.filter((i) => i.id !== id))
     },
   })
 }
