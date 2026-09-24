@@ -20,7 +20,7 @@ const server = Bun.serve({
   routes: {
     "/": indexHtml,
   },
-  async fetch(req) {
+  async fetch(req, server) {
     const { pathname } = new URL(req.url)
 
     // Serve static files from public/ (decode %20 etc. back to literal chars)
@@ -29,6 +29,10 @@ const server = Bun.serve({
 
     // Route API requests through Elysia
     if (pathname.startsWith("/api")) {
+      // Bun drops a connection that sends nothing for 10s (idleTimeout), and a
+      // backup or restore spends longer than that in mysqldump/tar before the
+      // first byte. The browser then shows "Site wasn't available".
+      if (pathname.startsWith("/api/backup")) server.timeout(req, 0)
       return api.handle(req)
     }
 
