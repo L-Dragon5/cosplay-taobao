@@ -2,6 +2,17 @@
 
 A personal web app for saving and browsing Taobao cosplay listings. Paste JSON data copied from a Taobao product page, and the app extracts the title, images, price, and seller info, then displays everything in a searchable card grid.
 
+## Adding items from Taobao
+
+Drag the **Add to Closet** button in the app header to your bookmarks bar
+(once per browser, from the deployed site so it points there). On a Taobao
+listing, click the bookmark: it opens the app in a new tab and adds the item,
+with the usual duplicate prompt. It replaces the CosManage Chrome extension and
+reads the same fields (`mainTitle--`, `priceText--`, `shopName--`,
+`thumbnailItem--` classes), so a Taobao redesign breaks both the same way; fix
+the selectors in `src/frontend/bookmarklet.ts` and drag the button again.
+Pasting the extension's JSON into the input still works.
+
 ## Requirements
 
 - [Bun](https://bun.sh) v1.3+

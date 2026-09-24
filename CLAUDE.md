@@ -46,7 +46,9 @@ src/
     App.tsx            # React root; wraps with MantineProvider, Notifications, QueryClientProvider, RouterProvider
     api.ts             # Eden Treaty client — typed against backend App export
     queries.ts         # React Query hooks (useItemsQuery, useCreateItemMutation, useUpdateItemMutation, useArchiveItemMutation, useUnarchiveItemMutation, useDeleteItemMutation)
+    bookmarklet.ts     # Taobao scraper bookmarklet (bookmarkletHref) + #add=<json> hash parsing
     components/
+      BookmarkletLink.tsx   # Header "Add to Closet" link to drag to the bookmarks bar
       VirtualCardGrid.tsx   # Responsive virtual grid (1–5 cols by viewport width)
       BackupMenu.tsx        # Header database icon: Download backup / Restore from backup modal
     routes/
@@ -167,6 +169,7 @@ scripts/docker-smoke.sh  # Container end-to-end: build, backup, wipe, restore
 
 ## Frontend — Index Page (`routes/index.tsx`)
 
+- **Bookmarklet add**: `/#add=<json>` (opened by the bookmarklet) is read once on load, the hash cleared, and run through `handleAdd` in a cancelled-on-cleanup `setTimeout` (a mutation fired from StrictMode's throwaway mount leaves `isPending` stuck)
 - **Sticky toolbar**: JSON paste input + pink "Add Item" button (Enter key supported); Divider; debounced search input (`useDebouncedValue`, 300ms); "Show Archived Only" Chip; "Display Original Names" Chip
 - **Item grid**: `VirtualCardGrid` with `ItemCard` components
 - **ItemCard title priority**: `custom_title` → `translated_title` → `original_title`. When "Display Original Names" is checked, always shows `original_title`.

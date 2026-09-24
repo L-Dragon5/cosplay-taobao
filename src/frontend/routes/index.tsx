@@ -35,6 +35,7 @@ import {
 } from "@tabler/icons-react"
 import { createFileRoute } from "@tanstack/react-router"
 import { useEffect, useMemo, useRef, useState } from "react"
+import { addJsonFromHash } from "@/frontend/bookmarklet"
 import {
   VirtualCardGrid,
   type VirtualCardGridHandle,
@@ -332,7 +333,10 @@ function ItemCard({
 }
 
 function IndexPage() {
-  const [jsonInput, setJsonInput] = useState("")
+  const [bookmarkletJson] = useState(() =>
+    addJsonFromHash(window.location.hash),
+  )
+  const [jsonInput, setJsonInput] = useState(bookmarkletJson ?? "")
   const [addError, setAddError] = useState<string | null>(null)
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false)
   const [duplicateItemId, setDuplicateItemId] = useState<number | null>(null)
@@ -411,8 +415,8 @@ function IndexPage() {
     return result
   }, [items, debouncedSearch, showArchived])
 
-  async function handleAdd(override = false) {
-    const trimmed = jsonInput.trim()
+  async function handleAdd(override = false, json = jsonInput) {
+    const trimmed = json.trim()
     if (!trimmed || createMutation.isPending) return
 
     setAddError(null)
@@ -434,6 +438,20 @@ function IndexPage() {
       }
     }
   }
+
+  // The bookmarklet opens /#add=<json>. Deferred and cancelled on cleanup so
+  // StrictMode's throwaway first mount never fires it: a mutation started there
+  // leaves createMutation.isPending stuck. The hash is cleared so a reload
+  // does not add the item again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: run once on load
+  useEffect(() => {
+    if (bookmarkletJson === null) return
+    const timer = setTimeout(() => {
+      history.replaceState(null, "", window.location.pathname)
+      handleAdd(false, bookmarkletJson)
+    })
+    return () => clearTimeout(timer)
+  }, [])
 
   useEffect(() => {
     if (pendingScrollId === null) return
