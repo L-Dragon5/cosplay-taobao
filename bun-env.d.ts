@@ -15,3 +15,6 @@ declare module "*.module.css" {
   const classes: { readonly [key: string]: string }
   export = classes
 }
+
+// Plain stylesheets (Mantine's), imported for side effects only. TS 6+ checks those.
+declare module "*.css"

@@ -109,6 +109,7 @@ bun run translate-titles # Translate untranslated item titles via Gemini (ZH→E
 bun run backup           # db.sql + thumbs/ -> backups/cosplay-taobao-<stamp>.tar.gz, prunes >30d
 bun run restore <file>   # Replace DB + thumbs from an archive (safety backup first)
 bun test                 # Gate tests (no DB needed)
+bun run typecheck        # tsc --noEmit (TypeScript 5, zero errors)
 scripts/docker-smoke.sh  # Container end-to-end: build, backup, wipe, restore
 ```
 

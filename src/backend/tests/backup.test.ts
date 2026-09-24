@@ -9,7 +9,9 @@ import {
   defaultPath,
   dumpArgs,
   looksComplete,
+  NotABackup,
   parseCounts,
+  restore,
   tail,
   toPrune,
 } from "@/backend/backup/service"
@@ -146,4 +148,17 @@ test("POST /backup/restore refuses a file that is not a backup, touching nothing
   )
   expect(res.status).toBe(400)
   expect((await res.json()).error).toMatch(/not a backup/)
+})
+
+test("restore refuses a bad archive before it reads DB_*, so no .env is needed", async () => {
+  // Regression: dbName(env) ran first, so a garbage upload on a host without
+  // DB_DATABASE was a 500 "bad database name" instead of a 400.
+  const dir = mkdtempSync(join(tmpdir(), "bad-archive-"))
+  try {
+    const p = join(dir, "x.tar.gz")
+    writeFileSync(p, "not a tarball")
+    await expect(restore(p, {})).rejects.toBeInstanceOf(NotABackup)
+  } finally {
+    rmSync(dir, { recursive: true })
+  }
 })
