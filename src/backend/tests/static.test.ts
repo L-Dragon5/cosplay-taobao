@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { resolve } from "node:path"
-import { publicPath } from "@/backend/static"
+import { publicPath, staticHeaders } from "@/backend/static"
 
 const root = resolve("public")
 
@@ -40,4 +40,15 @@ test("malformed escapes and NUL bytes return null instead of throwing", () => {
 
 test("the root itself is not a file", () => {
   expect(publicPath("/")).toBeNull()
+})
+
+test("thumbs are cached as immutable, other files and escapes are not", () => {
+  const cc = (raw: string) => {
+    const path = publicPath(pathnameOf(raw))
+    return path && new Headers(staticHeaders(path)).get("cache-control")
+  }
+  expect(cc("/thumbs/0b1c.jpg")).toContain("immutable")
+  expect(cc("/index.html")).toBeNull()
+  expect(cc("/thumbs/..%2Findex.html")).toBeNull()
+  expect(cc("/thumbs-evil/x.jpg")).toBeNull()
 })

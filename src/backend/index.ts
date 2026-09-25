@@ -3,7 +3,7 @@ import { Elysia } from "elysia"
 import { backupController, MAX_UPLOAD_BYTES } from "@/backend/backup"
 import { initDb } from "@/backend/db"
 import { itemsController } from "@/backend/items"
-import { publicPath } from "@/backend/static"
+import { publicPath, staticHeaders } from "@/backend/static"
 import indexHtml from "../../public/index.html"
 
 await initDb()
@@ -29,7 +29,8 @@ const server = Bun.serve({
     const path = publicPath(pathname)
     if (path) {
       const file = Bun.file(path)
-      if (await file.exists()) return new Response(file)
+      if (await file.exists())
+        return new Response(file, { headers: staticHeaders(path) })
     }
 
     // Route API requests through Elysia
